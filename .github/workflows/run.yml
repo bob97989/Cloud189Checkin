@@ -29,6 +29,7 @@ jobs:
       TY_USERNAME_3: ${{ secrets.TY_USERNAME_3 }}
       TY_PASSWORD_3: ${{ secrets.TY_PASSWORD_3 }}
       CLOUD189_VERBOSE: ${{ vars.CLOUD189_VERBOSE || '0' }}
+      NODE_OPTIONS: "--no-network-family-autoselection --dns-result-order=ipv4first"
 
     steps:
       - name: Check out code
