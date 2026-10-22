@@ -1,88 +1,97 @@
-name: Cloud check in action
+name: Cloud check in
+
 on:
   push:
     branches:
       - main
-  watch:
-    types: started
   workflow_dispatch:
   schedule:
-    - cron: 35 2 * * *
+    # 10:35 Asia/Shanghai
+    - cron: "35 2 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cloud189-checkin
+  cancel-in-progress: false
+
 jobs:
-  build-and-deploy:
+  check-in:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment: user
+    env:
+      TY_USERNAME_1: ${{ secrets.TY_USERNAME_1 }}
+      TY_PASSWORD_1: ${{ secrets.TY_PASSWORD_1 }}
+      TY_USERNAME_2: ${{ secrets.TY_USERNAME_2 }}
+      TY_PASSWORD_2: ${{ secrets.TY_PASSWORD_2 }}
+      TY_USERNAME_3: ${{ secrets.TY_USERNAME_3 }}
+      TY_PASSWORD_3: ${{ secrets.TY_PASSWORD_3 }}
+      CLOUD189_VERBOSE: ${{ vars.CLOUD189_VERBOSE || '0' }}
+
     steps:
-      - name: 🔀 random delay 0-300 seconds
-        run: sleep $((RANDOM % 301))
+      - name: Check out code
+        uses: actions/checkout@v4
 
-      - name: 🔌 Check out code
-        uses: actions/checkout@main
-
-      - name: 🔨 Setup Node.js environment
-        uses: actions/setup-node@main
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: npm
+          node-version: 22
 
-      - name: 👾 Check if Debug is true
-        if: vars.debug == '1'
+      - name: Validate credentials
         run: |
-          echo "CLOUD189_VERBOSE=1" >> $GITHUB_ENV
-      
-      - name: 📹 Restore cached Cookie
-        id: cache-cookie-restore
+          if [ -z "$TY_USERNAME_1" ] || [ -z "$TY_PASSWORD_1" ]; then
+            echo "::error::Set TY_USERNAME_1 and TY_PASSWORD_1 in the 'user' environment."
+            exit 1
+          fi
+
+      - name: Compute account cache key
+        id: account
+        run: |
+          ACCOUNT_HASH=$(printf '%s' "$TY_USERNAME_1" | sha256sum | cut -d' ' -f1)
+          echo "hash=$ACCOUNT_HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached login token
         uses: actions/cache/restore@v4
         with:
           path: .token
-          key: cloud189-token-${{ hashFiles('.token/*.json') }}
-          restore-keys: cloud189-token-
+          key: cloud189-token-${{ steps.account.outputs.hash }}-${{ github.run_id }}
+          restore-keys: |
+            cloud189-token-${{ steps.account.outputs.hash }}-
 
-      - name: 🔧 Init secrets
-        uses: shine1594/secrets-to-env-action@master
-        with:
-          secrets: ${{ toJSON(secrets) }}
-          secrets_env: production
-          prefix_prod: ""
-          file_name_prod: .env
+      - name: Install dependencies
+        run: npx --yes yarn@1.22.22 install --frozen-lockfile
 
-      - name: 📡 Init dependencies
-        run: npm install
+      - name: Check JavaScript syntax
+        run: |
+          find src -name '*.js' -print0 | xargs -0 -n1 node --check
+          node --check accounts.js
 
-      - name: 🚀 Run
-        uses: nick-fields/retry@master
-        with:
-          timeout_minutes: 30
-          max_attempts: 3
-          command: npm start
+      - name: Run check-in
+        run: npm start
 
-      - name: 🔑 Compute token hash
+      - name: Compute token cache key
+        id: token
         if: always()
         run: |
-          NEW_HASH=$(find .token -name '*.json' -exec sha256sum {} \; 2>/dev/null | sha256sum | cut -d' ' -f1)
-          echo "TOKEN_HASH=${NEW_HASH}" >> $GITHUB_ENV
+          if find .token -type f -name '*.json' -print -quit 2>/dev/null | grep -q .; then
+            TOKEN_HASH=$(find .token -type f -name '*.json' -exec sha256sum {} \; | sha256sum | cut -d' ' -f1)
+            echo "hash=$TOKEN_HASH" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: 📹 Save cached Cookie
-        if: always() && env.TOKEN_HASH != ''
+      - name: Save cached login token
+        if: always() && steps.token.outputs.hash != ''
         uses: actions/cache/save@v4
         with:
           path: .token
-          key: cloud189-token-${{ env.TOKEN_HASH }}
+          key: cloud189-token-${{ steps.account.outputs.hash }}-${{ steps.token.outputs.hash }}-${{ github.run_id }}
 
-      - name: 🚗 Keep Running
-        if: github.event_name == 'schedule'
+      - name: Keep the scheduled workflow active
+        if: success() && github.event_name == 'schedule'
         run: |
-          git config --local user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          git config --local user.name "${{ github.actor }}"
-          git remote set-url origin https://${{ github.actor }}:${{ github.token }}@github.com/${{ github.repository }}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase --autostash
           git commit --allow-empty -m "Keep Running..."
-          git push
-
-      - name: 🎉 Delete old workflow run
-        uses: Mattraks/delete-workflow-runs@main
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 50
+          git push origin HEAD:main

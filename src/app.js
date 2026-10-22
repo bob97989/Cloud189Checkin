@@ -23,37 +23,41 @@ const doUserTask = async (cloudClient, logger) => {
 };
 
 const run = async (userName, password, userSizeInfoMap, logger) => {
-  if (userName && password) {
-    const before = Date.now();
-    try {
-      logger.log("开始执行");
-      const cloudClient = new CloudClient({
-        username: userName,
-        password,
-        token: new FileTokenStore(`${tokenDir}/${userName}.json`),
-      });
-      const beforeUserSizeInfo = await cloudClient.getUserSizeInfo();
-      userSizeInfoMap.set(userName, {
-        cloudClient,
-        userSizeInfo: beforeUserSizeInfo,
-        logger,
-      });
-      await Promise.all([doUserTask(cloudClient, logger)]);
-    } catch (e) {
-      if (e.response) {
-        logger.log(`请求失败: ${e.response.statusCode}, ${e.response.body}`);
-      } else {
-        logger.error(e);
-      }
-      if (e.code === "ECONNRESET" || e.code === "ETIMEDOUT") {
-        logger.error("请求超时");
-        throw e;
-      }
-    } finally {
-      logger.log(
-        `执行完毕, 耗时 ${((Date.now() - before) / 1000).toFixed(2)} 秒`
-      );
+  if (!(userName && password)) {
+    logger.error("账号或密码为空");
+    return false;
+  }
+
+  const before = Date.now();
+  try {
+    logger.log("开始执行");
+    const cloudClient = new CloudClient({
+      username: userName,
+      password,
+      token: new FileTokenStore(`${tokenDir}/${userName}.json`),
+    });
+    const beforeUserSizeInfo = await cloudClient.getUserSizeInfo();
+    userSizeInfoMap.set(userName, {
+      cloudClient,
+      userSizeInfo: beforeUserSizeInfo,
+      logger,
+    });
+    await Promise.all([doUserTask(cloudClient, logger)]);
+    return true;
+  } catch (e) {
+    if (e.response) {
+      logger.log(`请求失败: ${e.response.statusCode}, ${e.response.body}`);
+    } else {
+      logger.error(e);
     }
+    if (e.code === "ECONNRESET" || e.code === "ETIMEDOUT") {
+      logger.error("请求超时");
+    }
+    return false;
+  } finally {
+    logger.log(
+      `执行完毕, 耗时 ${((Date.now() - before) / 1000).toFixed(2)} 秒`
+    );
   }
 };
 
@@ -61,13 +65,17 @@ const run = async (userName, password, userSizeInfoMap, logger) => {
 async function main() {
   //  用于统计实际容量变化
   const userSizeInfoMap = new Map();
+  let failedAccounts = 0;
   for (let index = 0; index < accounts.length; index++) {
     const account = accounts[index];
     const { userName, password } = account;
     const userNameInfo = mask(userName, 3, 7);
     const logger = log4js.getLogger(userName);
     logger.addContext("user", userNameInfo);
-    await run(userName, password, userSizeInfoMap, logger);
+    const succeeded = await run(userName, password, userSizeInfoMap, logger);
+    if (!succeeded) {
+      failedAccounts += 1;
+    }
   }
 
   //数据汇总
@@ -101,13 +109,21 @@ async function main() {
       ).toFixed(2)}G`
     );
   }
+
+  if (failedAccounts > 0) {
+    throw new Error(`${failedAccounts} 个账号执行失败`);
+  }
 }
 
 (async () => {
+  let exitCode = 0;
   try {
     await main();
     //等待日志文件写入
     await delay(1000);
+  } catch (e) {
+    console.error(e);
+    exitCode = 1;
   } finally {
     const logs = catLogs();
     const events = recording.replay();
@@ -116,4 +132,5 @@ async function main() {
     recording.erase();
     cleanLogs();
   }
+  process.exitCode = exitCode;
 })();

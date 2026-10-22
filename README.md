@@ -31,17 +31,17 @@
 
 ### 设置账号密码
 
-新版本的 git Action 需要创建 environment 来配合使用，创建一个名为 user 的环境
+在仓库的 Settings -> Environments 中创建名为 `user` 的环境。
 ![](https://cdn.jsdelivr.net/gh/wes-lin/Cloud189Checkin/image/env.png)
 
-方式一：编辑 user 环境，添加变量 TY_ACCOUNTS userName 和 password 为你的天翼账号和密码,可以添加多个账号如[{"userName":"账号 1","password":"账号 1 的密码"},{"userName":"账号 2","password":"账号 2 的密码"}]
-![](https://cdn.jsdelivr.net/gh/wes-lin/Cloud189Checkin/image/accounts.jpg)
+在该环境的 Environment secrets 中添加：
 
-如果你遇到你账号密码中有特殊字符如#$等无法解析的[SyntaxError](https://github.com/wes-lin/Cloud189Checkin/issues/76),请在你的配置中将TY_ACCOUNTS用单引号包起来
-例如'[{"userName":"1234567890","password":"123334#$#$"}]'
+- `TY_USERNAME_1`：天翼账号
+- `TY_PASSWORD_1`：天翼密码
 
-方式二：如果你的账号有多个并且经常变动，推荐这个方式
-同样在 user 环境中添加变量，用户名环境变量TY_USERNAME_{index},账号密码环境变量TY_PASSWORD_{index},如添加第一个账号则是TY_USERNAME_1，第一个账号密码是TY_PASSWORD_1,第二个账号则是TY_USERNAME_2，第二个账号密码是TY_PASSWORD_2,以此类推。
+最多支持 3 个账号。如需添加更多账号，请按连续编号配置 `TY_USERNAME_2` / `TY_PASSWORD_2`、`TY_USERNAME_3` / `TY_PASSWORD_3`。不要跳过编号。
+
+账号密码只保存在 GitHub Secrets 中，不要写入 `.env` 或提交到仓库。
 ![](https://cdn.jsdelivr.net/gh/wes-lin/Cloud189Checkin/image/account.png)
 
 ## 设置推送
@@ -121,14 +121,14 @@ Actions > Cloud check in action > build
 
 ```
 
-Node.js 18+
+推荐 Node.js 22。
 
 ```
 
 ### 克隆项目
 
 ```bash
-git clone https://github.com/wes-lin/Cloud189Checkin.git
+git clone https://github.com/bob97989/Cloud189Checkin.git
 ```
 
 ```bash
